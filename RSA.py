@@ -1,5 +1,6 @@
 import random
 from math import log2
+import hashlib
 
 log = lambda x: int(log2(x))
 
@@ -27,7 +28,18 @@ def MillerRabin(n, k=10):
             return False
     return True
 
-def GeneratePQ():
+def PQisSecure(p, q):
+    n = p * q
+    if abs(p-q) < 2 * n**.25:
+        return False
+    dMaybe = PrivateKey(p, q, gStdE)[0]
+    if dMaybe < n**.25 / 3:
+        return False
+    if n < 1<<gEncLen:
+        return False
+    return True
+
+def GenerateRawPQ():
     rand = 4
     while not IsPrime(rand):
         rand = random.randint(1, 1<<gHalfKey)
@@ -38,7 +50,14 @@ def GeneratePQ():
         rand = random.randint(1, 1<<gHalfKey)
     q = rand
     return p, q
-    
+
+def GeneratePQ():
+    while True:
+        p, q = GenerateRawPQ()
+        if PQisSecure(p, q):
+            break
+        print(f'Insecure pq generated')
+    return p, q
 
 def IsPrime(n, k = 10):
     if n < 1_000_000_000:
@@ -73,12 +92,9 @@ def FmtKeys(pvt, pub):
     print(f'\tPublic Key: \n{KeyStr(pub)}')
     
 
-def Encrypt(pubKey, msg):
-    E, n = pubKey if type(pubKey) != str else SepKeyStr(pubKey)
-    return pow(msg, E, n)
-def Decrypt(pvtKey, msg):
-    D, n = pvtKey if type(pvtKey) != str else SepKeyStr(pvtKey)
-    return pow(msg, D, n)
+def Apply(key, msg):
+    P, n = key if type(key) != str else SepKeyStr(key)
+    return pow(msg, P, n)
 
 def Pad(msg):
     lenmsg = 1+log(msg)
@@ -119,7 +135,15 @@ def KeyStr(i):
 def SepKeyStr(x):
     return [Dec85(y) for y in x.split('`')]
 
-def FullEncrypt(pubKey, msg):
-    return Enc85(Encrypt(pubKey, Pad(msg)))
-def FullDecrypt(pvtKey, msg):
-    return DePad(Decrypt(pvtKey, Dec85(msg)))
+def Encrypt(pubKey, msg):
+    return Enc85(Apply(pubKey, Pad(msg)))
+def Decrypt(pvtKey, msg):
+    return DePad(Apply(pvtKey, Dec85(msg)))
+
+def SignMsg(pvtKey, msg):
+    h = int(hashlib.sha256(msg.encode('utf-8')).hexdigest(), 16)
+    return (msg, Encrypt(pvtKey, h))
+def VerifySign(pubKey, msg, sign):
+    h = int(hashlib.sha256(msg.encode('utf-8')).hexdigest(), 16)
+    dh = Decrypt(pubKey, sign)
+    return h == dh
